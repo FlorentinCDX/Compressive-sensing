@@ -1,0 +1,818 @@
+  ---
+title: "ComputerLab"
+author: "Florentin Coeurdoux"
+date: "12/12/2019"
+output:
+  html_document: default
+  pdf_document: default
+header-includes:
+   - \usepackage{amsmath}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Matrix)
+library(ggplot2)
+library(tinytex)
+```
+
+## ComputerLab: compressive sensing and application to MRI
+
+This computer lab addresses the implementation and analysis of reconstruction algorithms for
+compressive sensing. In particular, an application to Medical resonance imaging (MRI) is addressed.
+The goal is to show the connection between compressive sensing and denoising. To get an intuition,
+this Lab first explores synthetic 1D sparse signals
+
+## Part 1 Denoising sparse 1D signals
+
+(a) Generate a ROW VECTOR (important in the following, if you use MaLab) 1 ×n vector,
+x, with k non-zero ((1:k)/k) coefficients where n = 128, k = 5, and permute them randomly
+
+```{r pressure, echo=FALSE}
+(x <- sparseVector(x = ((1:5)/5), i = sample(128, 5), length=128))
+```
+
+(b) Create a graph reporting the signal as a function of the position in the vector. 
+
+```{r}
+data <- cbind.data.frame(y = as.numeric(x), x = 1:128)
+
+ggplot(data, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="red", fill=alpha("orange", 0.3), alpha=0.7, shape=21, stroke=2) +
+  xlab("position")+
+  ylab("x")
+```
+
+(c) Add random Gaussian noise with standard deviation σ = 0.05 to the signal, y = x + N.
+
+```{r}
+noise <- rnorm(128, mean = 0, sd = 0.05)
+
+y <- x + noise 
+```
+  
+(d) Create a graph showing the noisy signal.
+
+```{r}
+noisydata <- cbind.data.frame(y = as.numeric(y), x = 1:128)
+
+ggplot(noisydata, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="blue", fill=alpha("lightblue", 0.3), alpha=0.7, shape=21, stroke=2) +
+  ggtitle("Noisy y") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("position")+
+  ylab("x")
+```
+
+(e) One approach for denoising consists in using regularization with Tichonov penalty to estimate the signal from noisy data. More precisely, it solves for λ ≥ 0:
+
+$$arg\min_{z \in \mathbb{R}^{n}} {1\over2}\left \| z - y \right \|_{2}^{2} + {1\over2}\lambda\left \| z \right \|_{2}^{2} $$
+Lets denote :
+$$
+Lets \ denote : \\
+\phi_{y}(u) = {1\over2}u^{2}\lambda + {1\over2}(u-y)^{2}
+\\ 
+\phi_{y}^{'}(u^{*}) = {1\over2}u^{*}\lambda + {1\over2}(2u^{*}-2y) 
+\\
+\ = u^{*}(1 + \lambda) - y
+\\
+\Rightarrow u^{*} = {1\over 1+\lambda}y
+$$
+
+
+(f) Compute the estimate (2). Observe what happens when we plot the result for λ ∈ {0.01, 0.05, 0.1, 0.2}.
+
+```{r}
+lambda <- c(0.01, 0.05, 0.1, 0.2)
+xhat <- matrix(nrow = length(y), ncol = length(lambda))
+y <- as.numeric(y)
+
+for (i in 1:length(lambda)) {
+  for(j in 1:length(y)) {
+   xhat[j, i] <- (1/(1+lambda[i]))*y[j] 
+  }
+}
+```
+
+Lets plot xhat for \lambda = 0.1
+
+```{r}
+denoisydata <- cbind.data.frame(y = xhat[,3], x = 1:128)
+
+ggplot(denoisydata, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="green", fill=alpha("lightgreen", 0.3), alpha=0.7, shape=21, stroke=2) +
+  ggtitle("’l_2 norm denoising’") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("position")+
+  ylab("x")
+```
+Here we see that the solution is not sparse, this is due to the fact that wee use the l2 norm. Here the coefficient are shriken by {1\over 1 + \lambda} but they won't go to zero.
+
+(g) Instead of Tichonov regularization, which penalizes the l2 norm, we will use the l1 norm
+penalized solution. More precisely, we will solve for λ ≥ 0:
+
+$$
+arg \min_{z \in \mathbb{R}^{n}} {1\over2}\left \| z - y \right \|_{2}^{2} + \lambda\left \| z \right \|_{1}
+= arg \min_{z \in \mathbb{R}^{n}}\phi_{y}(u)
+$$
+
+$$\phi_{y}(u)$$ is "separable" :
+
+$$
+\phi_{y}(u) = {1\over2} \sum_{i=1}^{n} (u_{i}-y_{i})^{2} +\lambda \sum_{i=1}^{n}(u_{i}) 
+= \sum_{i=1}^{n} {1\over 2} (u_{i}-y_{i})^{2} + \lambda (u_{i})
+=  \sum_{i=1}^{n} \phi_{y_{i}}(u_{i})
+$$
+
+$$arg \min_{u_{1},u_{2},...,u_{n}}\phi_{y}(u) =
+\begin{pmatrix}
+ arg \min_{u_{1}}\phi_{y_{1}}(u_{1}) \\ 
+... \\
+arg \min_{u_{n}}\phi_{y_{n}}(u_{n}) \\ 
+\end{pmatrix}
+= u^{*}
+$$
+
+We need :
+$$arg \min_{u \in \mathbb{R}} {1\over2}(u - y )^{2} + \lambda\left \| u \right \| $$
+
+first case $$u > 0$$ : 
+$$\phi_{y}(u) = \lambda u + {1\over2}(u-y)^{2}$$
+Lets try to find the minimum :
+$$\phi_{y}^{'}(u^{*}) = \lambda + (u-y) = 0
+\\
+\Leftrightarrow u_{1}^{*} = [y - \lambda]^{+}
+$$
+If $u < 0$:
+
+$$
+\phi_{y}(u) = - \lambda u + \frac{1}{2t} + (u-y)^{2} \\
+\phi_{y}^{'}(u) = 0 \\
+u_{2}^{*} = [y+ \lambda t]^{-}$$
+
+Equivalently, If $y \geq \lambda $ :
+
+$$y \in [- \lambda, \lambda ] \\ 
+u_{1}^{*} =  x + \lambda \\
+u_{2}^{*} = 0$$
+
+$$
+\phi_{y}(u_{1}^{*}) = \lambda (y - \lambda) + \frac{1}{2} (y - \lambda - y)^{2} \\
+\phi_{y}(u_{2}^{*}) = \frac{1}{2 \lambda} y^{2} \\
+u_{1}^{*} = x - \lambda t \\
+u_{2}^{*} = 0 \\
+\phi_{y}(u_{1}^{*})  \leq \phi_{y}(u_{2}^{*}) \\
+u^{*} = u_{1}^{*} $$
+
+$$\hat{x} = SoftThresh(y, λ) = \begin{equation}
+  \left\{
+      \begin{aligned}
+        y_{l} + \lambda,& \ \ \ \text{if } y_{l} \leq  \lambda\\ 
+        0,& \ \ \ \text{if } \mid y_{l}\mid < \lambda\\  
+        y_{l} - \lambda,& \ \ \ \text{if } y_{l} \geq \lambda\\ 
+      \end{aligned}
+    \right.
+\end{equation}$$
+
+The differece between Tichonov regularization with l1 norm and the Basis Pursuit (BP) algorithm is that Basis Pursuit has a fat A matrix behind the z in the first terrm of the function we wan't to minimize. Basis Pursuit provides the sparse solution that Tikhonov regularization doesn’t.
+
+```{r}
+SoftThresh <- function(y, lambda) {
+  xhat <- vector(length = length(y))
+  for( i in which((abs(y)<lambda), arr.ind = TRUE)) {
+      xhat[i] <- 0
+    }
+  for( i in which((y<= -lambda), arr.ind = TRUE) ) {
+    xhat[i] <- y[i] + lambda
+  }
+  for( i in which((y>=lambda), arr.ind = TRUE) ) {
+    xhat[i] <- y[i] - lambda
+  }
+  return(xhat)
+}
+
+(SoftThresh_y <- SoftThresh(y = -10:10, lambda = 2))
+```
+
+Lets Plot SoftThresh(u, λ) for u ∈ [−10, 10] and λ = 2
+
+```{r}
+SoftThresh_data <- cbind.data.frame(y =SoftThresh_y , x = -10:10)
+
+ggplot(SoftThresh_data, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="yellow", fill=alpha("lightyellow", 0.3), alpha=0.7, shape=21, stroke=2) +
+  ggtitle("’SoftThresh function, λ =num2str(lambda)]’")  +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("position")+
+  ylab("x")
+```
+
+When y is small compare to lambda, all the coefficients of \hat{x} will be 0. If y is big compare to lambda,the coefficients of \hat{x} will be pretty close to the coefficients of y.
+
+(h) Apply SoftThresh to the noisy signal y for λ ∈ {0.01, 0.05, 0.1, 0.2} and include the plot of \hat{x} for λ = 0.1 in your report.
+
+```{r}
+SoftThresh_xhat <- matrix(nrow = length(y), ncol = length(lambda))
+
+for (i in 1:length(lambda)) {
+   SoftThresh_xhat[, i] <- SoftThresh(y = y, lambda = lambda[i]) 
+}
+```
+
+Lets plot xhat for \lambda = 0.1
+
+```{r}
+
+SoftThresh_denoisy_data <- cbind.data.frame(y = SoftThresh_xhat[,3], x = 1:128)
+
+ggplot(SoftThresh_denoisy_data, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="green", fill=alpha("lightgreen", 0.3), alpha=0.7, shape=21, stroke=2) +
+  ggtitle("’SoftThresh denoising’") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("position")+
+  ylab("x")
+
+```
+
+Here we can oberve a pretty good estimate but not perfect of the original vector x. If we take a look at the estimation we can see that indeed it is sparse but the hight of the non-zero coefficients is not the same as in the original vector.
+  
+## Random Frequency Domain Sampling and Aliasing
+
+We’ll now explore the connection between compressive sensing and denoising and the importance
+of choosing a good measurement matrix. To do so, we’ll observe the effect of regular and then
+random sampling of the signal in the frequency domain.
+
+lets clear all variables :
+
+```{r}
+rm(x, y, noise, data, noisydata, denoisydata, SoftThresh_data, SoftThresh_denoisy_data, xhat, SoftThresh_xhat)
+```
+(a) (same as Part 1) Generate a 1 × n vector, x, with k non-zero ((1:k)/k) coefficients where n = 128, k = 5, and permute them randomly.
+
+```{r}
+(x <- sparseVector(x = ((1:5)/5), i = sample(128, 5), length=128))
+```
+
+(b) (same as Part 1) Create a graph reporting the signal as a function of the position in the vector.
+
+```{r}
+data <- cbind.data.frame(y = as.numeric(x), x = 1:128)
+
+ggplot(data, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="red", fill=alpha("orange", 0.3), alpha=0.7, shape=21, stroke=2)+ 
+  xlab("position")+
+  ylab("x")
+```
+
+(c) compute the centered Fourier transform of the sparse signal, X = F x where F is a Fourier transform operator,
+```{r}
+X <- fft(as.numeric(x))
+```
+
+(d) We measure a subset of the Fourier transform, Xu = Fux where Fu is a Fourier transform evaluated only at a subset of frequency domain samples. This is an underdetermined data set for which there is an infinite number of possible solutions. However, we do know that the original signal is sparse, so there is hope we will be able to reconstruct it.
+This technique of subsampling the Fourier transform coefficients can be seen as a compressive sensing technique. Indeed, in compressive sensing, we take less measurements than dictated by the Shannon-Nyquist criterion and take linear combinations of the signal. More formally, we compute y = Mx, where M is a matrix with more columns than rows. Fu is an example of such a compressive sensing measurement matrix.
+The theory of compressive sensing suggests random undersampling (seen later in the course). To see why, we will look at (non random) equispaced undersampling and compare it to random undersampling.
+Undersample the Fourier transform coefficients by taking 32 equispaced samples. Compute the inverse Fourier transform, filling the missing data (in the frequency domain) with zeroes, and multiply by 4 to correct for the fact that we have only 1/4 of the samples,
+
+```{r}
+n <- 128 
+Xu <- rep(0, n)
+Xu[seq(from = 1, to = n, by = 4)] <- X[seq(from = 1, to = n, by = 4)]
+xu <- fft(Xu, inverse=TRUE)*4
+```
+
+Let us denote T the matrix which corresponds to the discrete Fourier transform, i.e. X = T x. Recall that T is an orthogonal matrix. Let us denote TK the matrix which computes K out of n Fourier coefficients, i.e. XK = TKx, where XK is a K-length vector.
+Show that : $$x_{K} = T_{T}^{K}X_{K} = T_{T}^{K}T_{T}x_{K} $$ is the orthogonal projection of x on the subspace $$I_{m}(T_{T}^{K})$$. Show that this is the minimum $$l_{2}$$ norm solution.
+We knoz that T is an orthogonal matrix, so : $$TT^{t} = I$$.
+
+We know that :$$ X=Tx \Rightarrow T^{-1}X=T^{-1}Tx \Rightarrow  x=T^{-1}X=x$$ 
+
+
+(e) Plot the real and imaginary parts of xu.
+
+```{r}
+realpart <- cbind.data.frame(y = Re(xu), x = 1:length(Re(xu)))
+
+ggplot(realpart, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="blue", fill=alpha("lightblue", 0.3), alpha=0.7, shape=21, stroke=2) +
+  labs(title = "Plot of the real part", y = "Real part") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+imaginary_part <- cbind.data.frame(y = Im(xu), x = 1:length(Im(xu)))
+
+ggplot(imaginary_part, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="red", fill=alpha("orange", 0.3), alpha=0.7, shape=21, stroke=2) +
+  labs(title = "Plot of the imaginary part", y = "Imaginary part") +
+  theme(plot.title = element_text(hjust = 0.5))
+  
+```
+
+So here we observe that xu semms to be periodic. We can see that the imaginary part is very close to zero so we can say that xu only has real part. The real part is periodic, it represent Xu periodicaly in the time space so we know the frequence. But we don't know the shift of xu in the time space. This lack of information does not allow us to reconstruct the original signal from the result. The fact that we use equidistant points to generate Xu from X has periodise the signal xu. 
+
+(f) Now, undersample X by taking 32 samples at random. Compute the zero-filled inverse Fourier transform and multiply by 4 again,
+
+```{r}
+Xr <- rep(0, n)
+prm <- sample(128, 32)
+Xr[prm] <- X[prm]
+xr <- fft(Xr, inverse=TRUE) * 4
+```
+
+(g) Plot the real and imaginary parts of xr :
+
+```{r}
+require(gridExtra)
+realpartr <- cbind.data.frame(y = Re(xr), x = 1:length(Re(xr)))
+
+real_plotr <- ggplot(realpartr, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="blue", fill=alpha("lightblue", 0.3), alpha=0.7, shape=21, stroke=2) +
+                labs(title = "Plot of the real part", y = "Real part", x="position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+imaginary_partr <- cbind.data.frame(y = Im(xr), x = 1:length(Im(xr)))
+
+imaginary_plotr <- ggplot(imaginary_partr, aes(x=x, y=y)) +
+                    geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                    geom_point( size=3, color="red", fill=alpha("orange", 0.3), alpha=0.7, shape=21, stroke=2) +
+                    labs(title = "Plot of the imaginary part", y = "Imaginary part", x="position") +
+                    theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(real_plotr, imaginary_plotr, ncol=2)
+```
+
+by using random sampling we observe that the signal is not periodic anymore but still not very sparse we have now a signal denoising problem. The noise we see is actually incoherent aliasing that is contributed by the signal itself. 
+
+## Reconstruction from Randomly Sampled Frequency Domain Data
+
+lets clear all variables :
+
+```{r}
+rm(x, data, imaginary_part, realpart, imaginary_partr, realpartr, imaginary_plotr, real_plotr)
+```
+
+(a) (same as Part 1) Generate a 1 × n vector, x, with k non-zero ((1:k)/k) coefficients where n = 128, k = 5, and permute them randomly. Plot x.
+
+```{r}
+(x <- sparseVector(x = ((1:5)/5), i = sample(128, 5), length=128))
+```
+
+(b) (same as Part 1) Create a graph reporting the signal as a function of the position in the vector :
+
+```{r}
+data <- cbind.data.frame(y = as.numeric(x), x = 1:128)
+
+ggplot(data, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="red", fill=alpha("orange", 0.3), alpha=0.7, shape=21, stroke=2) +
+  xlab("position")+
+  ylab("x")
+```
+
+(c) (same as Part 2) Compute the Fourier transform X and undersample X by taking 32 samples at random. This leads to Y. Compute the inverse Fourier transform to get y and plot real and imaginary part of y.
+
+```{r}
+X <- fft(as.numeric(x))/sqrt(length(x))
+
+Y <- rep(0, n)
+prm <- sample(128, 32)
+Y[prm] <- X[prm]
+y <- fft(Y, inverse=TRUE)/sqrt(length(x))
+
+require(gridExtra)
+real_part <- cbind.data.frame(y = Re(y), t = 1:length(Re(y)))
+
+real_plot <- ggplot(real_part, aes(x=t, y=y)) +
+                geom_segment( aes(x=t, xend=t, y=0, yend=y) ) +
+                geom_point( size=3, color="blue", fill=alpha("lightblue", 0.3), alpha=0.7, shape=21, stroke=2) +
+                labs(title = "Plot of the real part", y = "Real part", x="position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+imaginary_part <- cbind.data.frame(y = Im(y), t = 1:length(Im(y)))
+
+imaginary_plot <- ggplot(imaginary_part, aes(x=t, y=y)) +
+                    geom_segment( aes(x=t, xend=t, y=0, yend=y) ) +
+                    geom_point( size=3, color="red", fill=alpha("orange", 0.3), alpha=0.7, shape=21, stroke=2) +
+                    labs(title = "Plot of the imaginary part", y = "Imaginary part", x="position") +
+                    theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(real_plot, imaginary_plot, ncol=2)
+```
+
+(d) Lets implement the Projection Over Convex Sets (POCS) algorithm
+
+```{r}
+SoftThreshComplex <- function(y, lambda) {
+  xhat <- vector(length = length(y))
+  for( i in which((Mod(y)<lambda), arr.ind = TRUE)) {
+      xhat[i] <- 0
+    }
+  for( i in which((Mod(y)>lambda), arr.ind = TRUE) ) {
+    xhat[i] <- y[i]*(Mod(y[i])-lambda) / Mod(y[i])
+  }
+  return(xhat)
+}
+
+Xhat <- Y
+i <- 1
+while(i < 101) {
+  Xhat <- Xhat
+  xhat <- fft(Xhat, inverse = TRUE)/sqrt(length(Xhat))
+  xhat <- SoftThreshComplex(y = xhat, lambda = 0.05)
+  Xhat <- (fft(xhat)/sqrt(length(xhat)))
+  Xhat <- Xhat*(Y==0) + Y
+  i <- i+1
+}
+
+
+real_part <- cbind.data.frame(y = Re(xhat), x = 1:length(Re(xhat)))
+
+real_plot <- ggplot(real_part, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="blue", fill=alpha("lightblue", 0.3), alpha=0.7, shape=21, stroke=2) +
+                labs(title = "Plot of the real part", y = "Real part", x="position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+imaginary_part <- cbind.data.frame(y = Im(xhat), x = 1:length(Im(xhat)))
+
+imaginary_plot <- ggplot(imaginary_part, aes(x=x, y=y)) +
+                    geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                    geom_point( size=3, color="red", fill=alpha("orange", 0.3), alpha=0.7, shape=21, stroke=2) +
+                    labs(title = "Plot of the imaginary part", y = "Imaginary part", x="position") +
+                    theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(real_plot, imaginary_plot, ncol=2)
+```
+
+(e) Apply the algorithm (at least 100 iterations) to the undersampled signal with λ ∈ {0.01, 0.05, 0.1} and plot the results. You can see the evolution of the intermediate result. To plot the signal at each iteration use drawnow after the plot command.
+
+```{r}
+lambda <- c(0.01, 0.05, 0.1)
+Xhat <- Y
+xhat <- fft(Xhat, inverse = TRUE)/sqrt(length(xhat))
+x <- as.numeric(x)
+
+SoftThreshComplex_xhat <- matrix(nrow = length(xhat), ncol = length(lambda))
+SoftThreshComplex_Xhat <- matrix(nrow = length(xhat), ncol = length(lambda))
+
+error <- matrix(nrow = 100, ncol = length(lambda))
+errorfun <- function(x, xhat){
+  return(sum(x^2-xhat^2))
+}
+
+for (i in 1:length(lambda)) {
+       SoftThreshComplex_Xhat[, i] <- Xhat
+    }
+
+for (j in 1:100) { 
+    SoftThreshComplex_Xhat <- SoftThreshComplex_Xhat
+    for (i in 1:length(lambda)) {
+       SoftThreshComplex_xhat[, i] <- fft(SoftThreshComplex_Xhat[,i], inverse = TRUE)/sqrt(length(xhat))
+    }
+    for (i in 1:length(lambda)) {
+       SoftThreshComplex_xhat[, i] <- SoftThreshComplex(y = SoftThreshComplex_xhat[, i], lambda = lambda[i]) 
+    }
+    for (i in 1:length(lambda)) {
+       SoftThreshComplex_Xhat[, i] <- fft(SoftThreshComplex_xhat[, i])/sqrt(length(xhat))
+    }
+    for (i in 1:length(lambda)) {
+       SoftThreshComplex_Xhat[, i] <- SoftThreshComplex_Xhat[, i]*(Y==0) + Y
+       error[j,i] <- errorfun(as.numeric(x), Re(SoftThreshComplex_xhat[, i]))
+    }
+}
+
+for (i in 1:length(lambda)) {
+       SoftThreshComplex_xhat[, i] <- fft(SoftThreshComplex_Xhat[,i], inverse = TRUE)/sqrt(length(xhat))
+}
+
+real_plot <- ggplot(data, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="red", fill=alpha("orange", 0.3), alpha=0.7, shape=21, stroke=2)
+
+real_part1 <- cbind.data.frame(y = Re(SoftThreshComplex_xhat[, 1]), x = 1:length(Re(SoftThreshComplex_xhat[, 1])))
+
+real_plot1 <- ggplot(real_part1, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="blue", fill=alpha("lightblue", 0.3), alpha=0.7, shape=21, stroke=2) +
+                labs(title = "Estimation of x with lambda = 0.01", y = "Real part x_hat", x = "position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+real_part2 <- cbind.data.frame(y = Re(SoftThreshComplex_xhat[, 2]), x = 1:length(Re(SoftThreshComplex_xhat[, 2])))
+
+real_plot2 <- ggplot(real_part2, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="blue", fill=alpha("lightblue", 0.3), alpha=0.7, shape=21, stroke=2) +
+                labs(title = "Estimation of x with lambda = 0.05", y = "Real part x_hat", x = "position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+real_part3 <- cbind.data.frame(y = Re(SoftThreshComplex_xhat[, 3]), x = 1:length(Re(SoftThreshComplex_xhat[, 3])))
+
+real_plot3 <- ggplot(real_part3, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="blue", fill=alpha("lightblue", 0.3), alpha=0.7, shape=21, stroke=2) +
+                labs(title = "Estimation of x with lambda = 0.1", y = "Real part x_hat", x = "position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+
+grid.arrange(real_plot, real_plot1, real_plot2, real_plot3, ncol=1, nrow = 4)
+
+```
+
+We can observe above that the best aproximation of the original signal is obtain with lambda = 0.05. As lambda gets larger more coefficients are put to 0 and the approximation becomes more inaccurate because it can’t capture anymore all the important coefficients in order to reconstruct the original vector x. Conversely, as lambda gets smaller some noise are still present.
+
+(f) Make a plot of error between the true x and the estimate at each iteration xi as a function of the iteration number i, plotting the result for each of the λ’s.
+
+```{r}
+plot(error[,1], main = "Error for Lambda = 0.01", ylab = "Error", xlab = "Iterations")
+```
+```{r}
+plot(error[,2], main = "Error for Lambda = 0.05", ylab = "Error", xlab = "Iterations")
+```
+```{r}
+plot(error[,3], main = "Error for Lambda = 0.1", ylab = "Error", xlab = "Iterations")
+```
+
+From the mean square error plots we can observe that the lowest error is fro lambda = 0.05. As lambda gets larger the faster the error converges to 0 because a larger shrinkage is applied on the coefficients. We have to choose carefully the value of lambda and the number of iterations of the algorithm.
+
+(g) Now, repeat the iterative reconstruction for the equispaced undersampled signal.
+
+```{r}
+X <- fft(x)/sqrt(length(x))
+Xu <- rep(0, 128)
+Xu[seq(from = 1, to = 128, by = 4)] <- X[seq(from = 1, to = 128, by = 4)]
+xu <- fft(Xu, inverse=TRUE)/sqrt(length(Xu))
+
+realpart <- cbind.data.frame(y = Re(xu), x = 1:length(Re(xu)))
+
+ggplot(realpart, aes(x=x, y=y)) +
+  geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+  geom_point( size=3, color="blue", fill=alpha("lightblue", 0.3), alpha=0.7, shape=21, stroke=2) +
+  labs(title = "Plot of the real part", y = "Real part") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+Xhat <- Xu
+xhat <- fft(Xhat, inverse = TRUE)/sqrt(length(Xhat))
+x <- as.numeric(x)
+
+SoftThreshComplex_xhat <- matrix(nrow = length(xhat), ncol = length(lambda))
+SoftThreshComplex_Xhat <- matrix(nrow = length(xhat), ncol = length(lambda))
+
+error <- matrix(nrow = 100, ncol = length(lambda))
+errorfun <- function(x, xhat){
+  return(sum(x^2-xhat^2))
+}
+
+for (i in 1:length(lambda)) {
+       SoftThreshComplex_Xhat[, i] <- Xhat
+    }
+
+for (j in 1:100) { 
+    SoftThreshComplex_Xhat <- SoftThreshComplex_Xhat
+    for (i in 1:length(lambda)) {
+       SoftThreshComplex_xhat[, i] <- fft(SoftThreshComplex_Xhat[,i], inverse = TRUE)/sqrt(length(SoftThreshComplex_Xhat[,i]))
+    }
+    for (i in 1:length(lambda)) {
+       SoftThreshComplex_xhat[, i] <- SoftThreshComplex(y = SoftThreshComplex_xhat[, i], lambda = lambda[i]) 
+    }
+    for (i in 1:length(lambda)) {
+       SoftThreshComplex_Xhat[, i] <- fft(SoftThreshComplex_xhat[, i])/sqrt(length(SoftThreshComplex_xhat[, i]))
+    }
+    for (i in 1:length(lambda)) {
+       SoftThreshComplex_Xhat[, i] <- SoftThreshComplex_Xhat[, i]*(Xu==0) + Xu
+       error[j,i] <- errorfun(as.numeric(x), Re(SoftThreshComplex_xhat[, i]))
+    }
+}
+
+for (i in 1:length(lambda)) {
+       SoftThreshComplex_xhat[, i] <- fft(SoftThreshComplex_Xhat[,i], inverse = TRUE)/sqrt(length(xhat))
+}
+
+real_plot <- ggplot(data, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="red", fill=alpha("orange", 0.1), alpha=0.7, shape=21, stroke=2)+
+                labs(title = "true signal", y = "Real part of x", x = "position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+real_part1 <- cbind.data.frame(y = Re(SoftThreshComplex_xhat[, 1]), x = 1:length(Re(SoftThreshComplex_xhat[, 1])))
+
+real_plot1 <- ggplot(real_part1, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="blue", fill=alpha("lightblue", 0.1), alpha=0.7, shape=21, stroke=2) +
+                labs(title = "Estimation of x with lambda = 0.01", y = "Real part x_hat", x = "position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+real_part2 <- cbind.data.frame(y = Re(SoftThreshComplex_xhat[, 2]), x = 1:length(Re(SoftThreshComplex_xhat[, 2])))
+
+real_plot2 <- ggplot(real_part2, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="blue", fill=alpha("lightblue", 0.1), alpha=0.7, shape=21, stroke=2) +
+                labs(title = "Estimation of x with lambda = 0.05", y = "Real part x_hat", x = "position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+real_part3 <- cbind.data.frame(y = Re(SoftThreshComplex_xhat[, 3]), x = 1:length(Re(SoftThreshComplex_xhat[, 3])))
+
+real_plot3 <- ggplot(real_part3, aes(x=x, y=y)) +
+                geom_segment( aes(x=x, xend=x, y=0, yend=y) ) +
+                geom_point( size=3, color="blue", fill=alpha("lightblue", 0.1), alpha=0.7, shape=21, stroke=2) +
+                labs(title = "Estimation of x with lambda = 0.1", y = "Real part x_hat", x = "position") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+
+grid.arrange(real_plot, real_plot1, real_plot2, real_plot3, ncol=1, nrow = 4)
+```
+
+As expected we fail to recover the true signal, because of the periodicity of the sampling method.
+
+```{r}
+plot(error[,1], main = "Error for Lambda = 0.01", ylab = "Error", xlab = "Iterations")
+```
+```{r}
+plot(error[,2], main = "Error for Lambda = 0.05", ylab = "Error", xlab = "Iterations")
+```
+```{r}
+plot(error[,3], main = "Error for Lambda = 0.1", ylab = "Error", xlab = "Iterations")
+```
+
+The POCS algorithm fails to reconstruct the signal, since the sampling method of taking equidistant points periodises the signal.
+
+## Reconstruction of MR images acquired through compressive sensing
+
+(a) Display the MR image brain.mat.
+
+```{r}
+im <- read.delim("brain_imag.txt", header=FALSE, sep=",")
+im <- as.matrix(im)
+real <- read.delim("brain_real.txt", header=FALSE, sep=",")
+image(abs(im))
+```
+
+The temporal MRI signal (i.e. the raw data) directly samples the spatial frequency domain of the MR image. In other words, the measurements are the 2D-Fourier transform of the MR image i.e. a linear combination of the MR signal. These raw data are usually referred to as k-space.
+Compressive sensing MRI consists in sampling the k-space at a rate lower than the ShannonNyquist criterion. In other words, it consists in subsampling in the spatial-frequency domain. This is similar to what we studied in Part 2 and 3. The difference is that we studied 1D pure sparse signal and now we will study 2D not perfectly sparse signals.
+
+(b) Random subsampling in the spatial frequency domain. Two subsampling patterns are proposed: mask unif, mask vardens . The first one subsamples according to     a uniform pattern whereas the second one mostly keeps low frequencies. Apply both filters to get M us, M vs 
+
+First lets import the masks and pdfs :
+
+```{r}
+mask_vardens <- read.delim("mask_vardens.txt", header=FALSE, sep=",")
+mask_unif <- read.delim("mask_unif.txt", header=FALSE, sep=",")
+
+pdf_vardens <- read.csv(file = "pdf_vardens.txt", header = F, sep = ',')
+pdf_unif <- read.csv(file = "pdf_unif.txt", header = F, sep = ',')
+
+M <- fft(im)/sqrt(length(im))
+M_vardens <- as.matrix((M*mask_vardens)/pdf_vardens)
+M_unif <- as.matrix((M*mask_unif)/pdf_unif)
+```
+
+(c) Compute a linear estimate m us that does not use the fact that x is sparse.
+
+```{r}
+im_vardens = fft(M_vardens, inverse=TRUE)/dim(M_vardens)[1]
+im_unif = fft(M_unif, inverse=TRUE)/dim(M_unif)[1]
+
+image(abs(im),  main = "True image")
+```
+```{r}
+image(abs(im_vardens),  main = "Vardens mask")
+```
+```{r}
+image(abs( (im_vardens - im)*10),  main = "Error vardens mask")
+```
+
+
+(d) Display the images (MR image / frequency domain / reconstruction error) :
+  
+
+```{r}
+image(abs(im_unif),  main = "Unif mask")
+```
+
+```{r}
+image(abs((im_unif - im)*10),  main = "Error unif mask")
+```
+
+(g) Implement POCS for the brain image and for both filters. display the reconstructed image at each iteration. Plot the error as a function of the iteration number.
+
+```{r}
+Xhat <- M
+i <- 1
+while(i < 101) {
+    Xhat <- Xhat
+    xhat <- fft(Xhat, inverse = TRUE)/(dim(Xhat)[1])
+    for (i in 1:dim(xhat)[1]) {
+      xhat[i,] <- SoftThreshComplex(y = xhat[i,], lambda = 0.05)
+    }
+    Xhat <- (fft(xhat)/(dim(xhat)[1]))
+    Xhat <- Xhat*(M==0) + M
+    i <- i+1
+}
+  
+xhat <- fft(Xhat, inverse = TRUE)/(dim(Xhat)[1])
+  
+image(abs(xhat))
+
+```
+```{r}
+SoftThreshComplex2D <- function(y, lambda) {
+  y <- as.vector(y)
+  xhat <- vector(length = length(y))
+  for( i in which((Mod(y)<lambda), arr.ind = TRUE)) {
+      xhat[i] <- 0
+    }
+  for( i in which((Mod(y)>lambda), arr.ind = TRUE) ) {
+    xhat[i] <- y[i]*(Mod(y[i])-lambda) / Mod(y[i])
+  }
+  matrix(xhat, ncol = 512, nrow = 512)
+  return(xhat)
+}
+Xhat <- M_vardens
+i <- 1
+while(i < 101) {
+  Xhat <- Xhat
+  xhat <- fft(Xhat, inverse = TRUE)/(dim(Xhat)[1])
+  xhat <- SoftThreshComplex2D(y = xhat, lambda = 0.01)
+  xhat <- matrix(xhat, ncol = 512, nrow = 512)
+  Xhat <- fft(xhat)/(dim(xhat)[1])
+  Xhat <- Xhat*(M_vardens==0) + M_vardens
+  i <- i+1
+}
+xhat <- fft(Xhat, inverse = TRUE)/dim(xhat)[1]
+image(abs(xhat))
+```
+
+```{r}
+errorfun2d <- function(x, xhat){
+  return(sum(x^2-Im(xhat)^2))
+}
+
+Xhat <- M_vardens
+i <- 1
+error <- rep(0, 100)
+while(i < 101) {
+  Xhat <- Xhat
+  xhat <- fft(Xhat, inverse = TRUE)/(dim(Xhat)[1])
+  for (k in 1:dim(xhat)[1]) {
+    xhat[k,] <- SoftThreshComplex(y = xhat[k,], lambda = 0.3)
+  }
+  Xhat <- (fft(xhat)/(dim(xhat)[1]))
+  Xhat <- Xhat*(M_vardens==0) + M_vardens
+  er <- rep(0, dim(xhat)[1])
+  for (j in 1:dim(xhat)[1]) {
+    er[j] <- errorfun2d(im[j,], xhat[j,])
+  }
+  error[i] <- sum(er)
+  i <- i+1
+}
+
+xhat <- fft(Xhat, inverse = TRUE)/(dim(Xhat)[1])
+
+image(abs(xhat))
+```
+```{r}
+plot(error, main = "Error vardens", ylab = "Error", xlab = "Iterations")
+```
+
+
+```{r}
+Xhat <- M_unif
+i <- 1
+error <- rep(0, 100)
+
+while(i < 101) {
+  Xhat <- Xhat
+  xhat <- fft(Xhat, inverse = TRUE)/(dim(Xhat)[1])
+  for (k in 1:dim(xhat)[1]) {
+    xhat[k,] <- SoftThreshComplex(y = xhat[k,], lambda = 0.25)
+  }
+  Xhat <- (fft(xhat)/(dim(xhat)[1]))
+  Xhat <- Xhat*(M_unif==0) + M_unif
+  er <- rep(0, dim(xhat)[1])
+  for (j in 1:dim(xhat)[1]) {
+    er[j] <- errorfun2d(im[j,], xhat[j,])
+  }
+  error[i] <- sum(er)
+  i <- i+1
+}
+
+xhat <- fft(Xhat, inverse = TRUE)/(dim(Xhat)[1])
+
+image(abs(xhat))
+
+```
+```{r}
+plot(error, main = "Error unif", ylab = "Error", xlab = "Iterations")
+```
+
+
+
